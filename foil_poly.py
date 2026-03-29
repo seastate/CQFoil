@@ -1,9 +1,9 @@
 
-""" Develop foil sections based on rational Bezier curves """
+""" Develop foil sections based on polynomials """
 
-# ------------------------------------------------------------------- #
+# ------------------------------------------------------------ #
 # Importing packages
-# ------------------------------------------------------------------- #
+# ------------------------------------------------------------ #
 import numpy as np
 import nurbspy.jax as nrb
 import matplotlib.pyplot as plt
@@ -33,63 +33,45 @@ def airfoil_to_dxf(points, filename="airfoil.dxf",close=True):
     doc.saveas(filename)
     print(f"DXF saved to: {filename}")
 
-
-# --------------------------------------------------------------------------------------- #
-# Foil sections parameterized as in Saporito et al. (2020)Pollock (1987)
-#
-# Based on the 2D rational Bezier curve example at https://github.com/turbo-sim/nurbspy
-# --------------------------------------------------------------------------------------- #
-def leading_halfedgeS(T,LE,R):
-    '''Define a rational Bezier curve for the leading edge of a foil.
+#------------------------------------------------------------------------
+# Foil sections parameterized as in Pollock (1987) with correction by Mik Storer
+#------------------------------------------------------------------------
+def leading_halfedgeP(T,LE,U):
+    '''Calculate XY points defining the leading edge of a foil.
     '''
-    # Define the array of control points
-    P = np.zeros((2,4))
-    P[:, 0] = [0.0, 0.0]
-    P[:, 1] = [0.0, T/2]
-    P[:, 2] = [2*LE/3, T/2]
-    P[:, 3] = [LE, T/2]
-    # Define the array of control point weights
-    W0 = 1
-    W2 = 1
-    W3 = 1
-    W1 = sqrt(2*R*P[0,2]*W0*W2/(3*P[1,2]**2))
-    W = np.asarray([W0,W1,W2,W3])
-    bezier2D = nrb.NurbsCurve(control_points=P, weights=W)
-    return bezier2D
+    # X- and Y-coordinates defining leading edge, where U is position normalized by LE
+    U2 = U**2  # square the x-coordinate to better resolve sqrt at LE
+    xLE = LE * U2
+    yLE = T/2 * (8/3*np.sqrt(U2) - 2*U2 + 1/3*U2**2 )
+    #print(f'xLE = {xLE}')
+    #print(f'yLE = {yLE}')
+    return xLE,yLE
 
-def trailing_halfedgeS(T,TE,A):
-    '''Define a rational Bezier curve for the trailing edge of a foil.
+def trailing_halfedgeP(T,TE,U):
+    '''Calculate XY points defining the leading edge of a foil.
     '''
-    # Define the array of control points
-    P = np.zeros((2,5))
-    P[:, 0] = [0.0, T/2]
-    P[:, 1] = [TE/(2*2.5), T/2]
-    P[:, 2] = [TE/2.5, T/2]
-    P[:, 3] = [2/3*TE, TE/3*tan(A)]
-    P[:, 4] = [TE, 0]
-    W = np.asarray([1,1,1,1,1])
-    bezier2D = nrb.NurbsCurve(control_points=P, weights=W)
-    return bezier2D
+    # X- and Y-coordinates defining trailing edge, where U is position starting at
+    # the beginning of the taper and normalized by TE
+    xTE = TE * U
+    yTE = T/2 * (1 - 3/2*U**2 + 1/2*U**3)
+    return xTE,yTE
 
-class foil_half_edgeS():
+class foil_half_edgeP():
     '''A class to facilitate piecewise assembly of an upper foil edge with
-       two NURBS joined by a flat section, following the parameterization of
-    Saporito et al. (2020).
+       two polynomial sections joined by a flat section, as outlined by Michael
+       Storer. This follows the parameterization of Pollock (1987), with the angle
+       parameter S=0 and correction of the trailing edge position coordinate (which
+       is reversed in the original publication).
     '''
-    def __init__(self,chord=1,Tfrac=0.08,LEfrac=0.2,TEfrac=0.4,Rfrac=0.05,A=pi/32,
-                 Npts=32,setpars=True,scale=1):
-        '''Parameters are fraction of chord length, except Rfrac which is a
-           fraction of thickness (T), as in Saporito et al. 2020.
-           Npts is the number of points to evaluate on each of the leading
-           edge and trailing edge.
+    def __init__(self,chord=1,Tfrac=0.08,LEfrac=0.2,TEfrac=0.4,Npts=32,setpars=True,scale=1):
+        '''Parameters are fraction of chord length. Npts is the number of points to evaluate
+           on each of the leading edge and trailing edge.
         '''
         self.chord = chord
         self.Tfrac = Tfrac
         self.TEfrac = TEfrac
         self.LEfrac = LEfrac
-        self.Rfrac = Rfrac
         self.Npts = Npts
-        self.A = A
         self.scale = scale
         if setpars:
             self.set_pars()
@@ -114,15 +96,9 @@ class foil_half_edgeS():
             self.TE = TE
         else:
             self.TE = self.TEfrac * self.chord
-        if R:
-            self.R = R
-        else:
-            self.R = self.Rfrac * self.T
-        if A:
-            self.A = A
         if Npts:
             self.Npts = Npts
-        # A set of points for parametric evaluation of the NURB coordinates
+        # A set of points for parametric evaluation of the polynomial coordinates
         self.u = np.linspace(0,1,self.Npts,dtype=np.float64)
         # Set the length of the flat section
         self.flat = self.chord - self.LE - self.TE
@@ -136,19 +112,17 @@ class foil_half_edgeS():
            If template==True, an outline of of a template with the half-foil cut out is generated.
            In that case, offset specifies the thickness of the template.
         '''
-        # Calculate the leading and trailing edge NURBs
-        self.bLE = leading_halfedgeS(self.T,self.LE,self.R)
-        self.bTE = trailing_halfedgeS(self.T,self.TE,self.A)
         # Evaluate points along the leading and trailing edges, using parametric points u
-        self.xLE, self.yLE = self.bLE.get_value(self.u)
-        self.xTE, self.yTE = self.bTE.get_value(self.u)
+        self.xLE, self.yLE = leading_halfedgeP(self.T,self.LE,self.u)
+        self.xTE, self.yTE = trailing_halfedgeP(self.T,self.TE,self.u)
         # x-positions of the trailing edge are offset by the lengths of the leading edge and flat
         self.xTE += self.LE + self.flat
         # Generate points along the flat section, to enable vertical slices through the foil
-        self.xFlat = np.linspace(self.LE,self.LE+self.flat,self.Npts)
-        self.yFlat_top = self.T/2*np.ones(self.Npts)
+        self.xFlat = np.linspace(self.LE,self.LE+self.flat,self.Npts)[1:-1] # omit endpoints
+        self.yFlat_top = self.T/2*np.ones(self.Npts)[1:-1]
         # assemble shape
         if template: # generate female template with half-foil cut-out
+            print('Generating template (female)')
             # adjust TE profile to give TE thickness
             self.yTE = self.T/2-(self.T/2-self.yTE)*(1-thicknessTE/self.T)
             # locate LE corners of the template
@@ -157,19 +131,23 @@ class foil_half_edgeS():
             # locate TE corners of the template
             x_templateTE = np.array([self.xTE[-1],self.xTE[-1]+offset,self.xTE[-1]+offset])
             y_templateTE = np.array([0.,0.,(offset+self.T/2)])
-            self.yFlat_bottom = (offset+self.T/2)*np.ones(self.Npts)
+            self.yFlat_bottom = (offset+self.T/2)*np.ones(self.Npts)[1:-1]
             # Assemble the half-foil in three sections (leading and trailing edges, with the
             # flat section between them)
             self.xs = np.concatenate([self.xLE,self.xFlat,self.xTE,x_templateTE,
                                       np.flip(self.xTE),np.flip(self.xFlat),np.flip(self.xLE),x_templateLE])
             self.ys = np.concatenate([self.yLE,self.yFlat_top,self.yTE,y_templateTE,
-                                      self.yFlat_bottom,self.yFlat_bottom,self.yFlat_bottom,y_templateLE])
+                                      np.full_like(self.yTE,offset+self.T/2),np.flip(self.yFlat_bottom),
+                                      np.full_like(self.yLE,offset+self.T/2),y_templateLE])
         else: # generate male outline of half-foil
-            self.yFlat_bottom = np.zeros(self.Npts)
+            print('Generating half-foil (male)')
+            self.yFlat_bottom = np.zeros(self.Npts)[1:-1]
             # Assemble the half-foil in three sections (leading and trailing edges, with the
             # flat section between them)
-            self.xs = np.concatenate([self.xLE,self.xFlat,self.xTE,np.flip(self.xTE),np.flip(self.xFlat),np.flip(self.xLE)])
-            self.ys = np.concatenate([self.yLE,self.yFlat_top,self.yTE,self.yFlat_bottom,self.yFlat_bottom,self.yFlat_bottom])
+            self.xs = np.concatenate([self.xLE,self.xFlat,self.xTE,
+                                      np.flip(self.xTE),np.flip(self.xFlat),np.flip(self.xLE)])
+            self.ys = np.concatenate([self.yLE,self.yFlat_top,self.yTE,
+                                      0*self.yTE,np.flip(self.yFlat_bottom),0*self.yLE])
 
     def plot(self,fig=None,ax=None,show=['LE','TE']):
         '''Plot the foil as defined by the current (xs,ys)
@@ -210,4 +188,3 @@ class foil_half_edgeS():
         if scale:
             self.scale = scale
         airfoil_to_dxf(np.column_stack([scale*xs.T,scale*ys.T]),filename=filename,close=close)
-
