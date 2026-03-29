@@ -5,7 +5,6 @@
 # Importing packages
 # ------------------------------------------------------------ #
 import numpy as np
-import nurbspy.jax as nrb
 import matplotlib.pyplot as plt
 from math import *
 import ezdxf
