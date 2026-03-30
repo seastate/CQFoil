@@ -18,6 +18,7 @@ There are two versions of this utility:
 2. A version based on a study by [Pollock (1987)](https://archive.org/details/DTIC_ADA189047) which is cited by Australian boat designer [Michael Storer](https://www.storerboatplans.com/boat-design/performance/naca-and-highly-accurate-centreboard-and-rudder-sections-is-it-possible/) as being efficient and suited for construction by amatuer home-builders.
 
    To run this utility in the cloud on Binder, click this button,
+   
     [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/seastate/CQFoil/HEAD?urlpath=%2Fdoc%2Ftree%2FcqfoilP.ipynb)
 
    then select `Run All Cells` under the `Run` menu.
