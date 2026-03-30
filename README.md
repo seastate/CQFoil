@@ -3,6 +3,9 @@
 
 This utility generates flat-sided 2-dimensional foil sections for applications in sailboats, and 3D-printable templates for accurately shaping the corresponding foils. 
 
+As an example, here are a pair of Leading Edge/Trailing Edge templates, laid for illustration on a foil constructed using different templates by a different builder.
+![Fig1](./images/foil_templates.png)
+
 ### Quickstart
 There are two versions of this utility:
 
